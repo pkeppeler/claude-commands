@@ -113,6 +113,8 @@ updates:
 
 Tell the user explicitly: language-specific ecosystems (`pip`, `npm`, etc.) should be added to this file separately, or via `/bootstrap-python` and friends.
 
+**If the contents PUT fails with 409/422**: a default-branch ruleset is already enforcing against direct commits (admin bypass mode `pull_request` blocks the API write). Record as "skipped: ruleset blocks direct commit — create `<path>` via PR" and continue. This typically only happens on a re-run where the ruleset already exists but a baseline file is missing; on the normal first-run path, Step 4 finishes before Step 5 creates the ruleset.
+
 ---
 
 ## Step 5 — Default-branch ruleset (skip if plan disallows)
