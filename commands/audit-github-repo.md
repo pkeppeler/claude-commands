@@ -43,7 +43,7 @@ If either check fails, **do not proceed**. Print the remediation and exit.
 - 403 → "not available"
 
 ### 6. Convention files — `gh api repos/<o>/<n>/contents/<path>`
-Check presence (not content) of: `.github/CODEOWNERS`, `.github/dependabot.yml`, `SECURITY.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/ISSUE_TEMPLATE/`, `.github/workflows/`
+Check presence (not content) of: `.github/CODEOWNERS`, `.github/dependabot.yml`, `SECURITY.md`, `.github/workflows/`
 
 ### 7. Workflow job names — read `.github/workflows/*.yml` via `gh api`
 For each workflow, list job keys and `name:` values. These are the candidate contexts for required status checks in a ruleset.
