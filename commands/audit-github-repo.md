@@ -35,7 +35,7 @@ If either check fails, **do not proceed**. Print the remediation and exit.
 ### 4. Rulesets — `gh api repos/<o>/<n>/rulesets`
 - For each ruleset: name, target, enforcement, rules summary, bypass actors
 - 403 → "not available on current plan" (private + free)
-- For any ruleset whose target includes the default branch, fetch its full rule details with `gh api repos/<o>/<n>/rulesets/<id>` so individual rule parameters and bypass-actor modes are visible.
+- Identify all rulesets whose `conditions.ref_name.include` contains `~DEFAULT_BRANCH` or the literal default branch name. Fetch full rule details with `gh api repos/<o>/<n>/rulesets/<id>` for each so individual rule parameters and bypass-actor modes are visible. More than one such ruleset is itself a gap (overlapping enforcement obscures effective policy).
 
 ### 5. Legacy branch protection — `gh api repos/<o>/<n>/branches/<default_branch>/protection`
 - 200 → list active protections
@@ -67,7 +67,7 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 
 **Default-branch ruleset** (named `default-branch-protection`)
 - Enforcement: `active`
-- `pull_request` rule: `required_approving_review_count: 1`, `dismiss_stale_reviews_on_push: true`, `require_code_owner_review: true`, `required_review_thread_resolution: true`, `allowed_merge_methods: ["squash"]` (mirrors the repo-level squash-only policy as audit-visible defense in depth)
+- `pull_request` rule: `required_approving_review_count: 1`, `dismiss_stale_reviews_on_push: true`, `require_code_owner_review: true`, `require_last_push_approval: false`, `required_review_thread_resolution: true`, `allowed_merge_methods: ["squash"]` (mirrors the repo-level squash-only policy as audit-visible defense in depth)
 - `required_status_checks` rule — **conditional on workflow presence**:
   - Workflows exist → rule must be present with `strict_required_status_checks_policy: true` and contexts that exactly match the discovered job names (no missing, no stale)
   - No workflows → rule must be **absent** (a placeholder always-passing check is cargo cult)
@@ -96,6 +96,6 @@ A single markdown report under ~500 words:
    - Context listed in the ruleset but no matching job in any workflow → gap (stale context, re-run bootstrap)
    - No workflows present but the rule exists → gap (rule should be removed until a workflow lands)
    - Workflows present but the rule is absent → gap (rule should be added)
-7. **Gaps** — bullet list of concrete deltas vs. baseline. Each gap should name the exact thing that's wrong (e.g. "ruleset bypass mode is `always` — should be `pull_request`", "`pull_request` rule's `allowed_merge_methods` is `[\"merge\",\"squash\",\"rebase\"]` — should be `[\"squash\"]`")
+7. **Gaps** — bullet list of concrete deltas vs. baseline. Each gap should name the exact thing that's wrong (e.g. "ruleset bypass mode is `always` — should be `pull_request`", "`pull_request` rule's `allowed_merge_methods` is `[\"merge\",\"squash\",\"rebase\"]` — should be `[\"squash\"]`", "multiple rulesets target the default branch (`default-branch-protection`, `legacy-protection`) — consolidate")
 
 Facts and gaps only. No generic best-practice advice — the reader is the owner.

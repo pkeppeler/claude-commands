@@ -28,17 +28,19 @@ If any check fails, **do not proceed**. Print the remediation and exit before an
 ## Step 1 — Inventory (read, parallel)
 
 Fetch:
-- `gh api repos/<o>/<n>` — settings, visibility, plan
+- `gh api repos/<o>/<n>` — settings, visibility
 - `gh api repos/<o>/<n>/vulnerability-alerts`
 - `gh api repos/<o>/<n>/private-vulnerability-reporting`
-- `gh api repos/<o>/<n>/rulesets`
+- `gh api repos/<o>/<n>/rulesets` — also serves as the plan probe (see below)
 - `gh api repos/<o>/<n>/branches/<default>/protection`
-- Workflow files in `.github/workflows/*.yml` (parse for job names)
+- `gh api repos/<o>/<n>/contents/.github/workflows` — 404 if absent. If present, iterate and fetch each file via `gh api repos/<o>/<n>/contents/.github/workflows/<name>`, base64-decode the `content` field, and parse for job keys and `name:` values.
 
-Determine plan constraints:
-- **Public** → all features available
-- **Private + free** (`owner.plan.name == "free"`) → no rulesets, no branch protection, no Code/Secret/Push-Protection scanning
-- **Private + paid** → rulesets available; scanning depends on GHAS
+Determine plan constraints from visibility plus the rulesets-list response (used as a plan probe):
+- **Public** → all features available; no probe needed.
+- **Private + rulesets list 200** → paid plan; rulesets available. Secret scanning still depends on a GHAS license — if step 3 returns 422, skip.
+- **Private + rulesets list 403** → free plan; rulesets, branch protection rulesets, and code/secret/push-protection scanning are all unavailable.
+
+Don't rely on `owner.plan.name` — that field is often absent on user-owned repos. The rulesets-list response is the canary.
 
 Print a one-line plan summary so the user knows what will be skipped.
 
@@ -119,15 +121,17 @@ Tell the user explicitly: language-specific ecosystems (`pip`, `npm`, etc.) shou
 
 ## Step 5 — Default-branch ruleset (skip if plan disallows)
 
-Discover required status check contexts: read each `.github/workflows/*.yml` and collect job contexts. A job's reported context is its `name:` if set, otherwise its YAML key under `jobs:`. Include all of them.
+Use the workflow job names already discovered in step 1. A job's reported context is its `name:` if set, otherwise its YAML key under `jobs:`. Include all of them.
 
 **Conditional rule**: include the `required_status_checks` rule **only if** at least one workflow job was discovered. If `.github/workflows/` is absent or has no jobs, omit the rule entirely — a placeholder no-op check is cargo cult, and an empty `required_status_checks` array provides no signal. The rule will be added on a subsequent re-run once a workflow exists.
+
+**Check for overlapping rulesets** before mutating: from step 1's ruleset list, fetch full details (`gh api repos/<o>/<n>/rulesets/<id>`) for any whose `conditions.ref_name.include` contains `~DEFAULT_BRANCH` or the literal default branch name. If any exist beyond `default-branch-protection`, surface them: "Found N additional ruleset(s) targeting the default branch: [name1, name2]. They will continue to enforce alongside this ruleset; consider consolidating manually." Then continue.
 
 Find any existing ruleset named `default-branch-protection`:
 - Exists → `gh api -X PUT repos/<o>/<n>/rulesets/<id>` (replace)
 - Missing → `gh api -X POST repos/<o>/<n>/rulesets` (create)
 
-Ruleset payload (omit the `required_status_checks` rule object when no workflow jobs were discovered):
+Ruleset payload (omit the `required_status_checks` rule object when no workflow jobs were discovered; expand `required_status_checks` to one `{ "context": "..." }` entry per discovered job — placeholders below are illustrative):
 
 ```json
 {
@@ -188,11 +192,13 @@ If step 1 found legacy branch protection on the default branch:
 
 ## Step 7 — Verification read-back
 
-Re-fetch the same endpoints from step 1 and produce a final markdown report:
+Re-fetch the same endpoints from step 1 and produce a final markdown report — same shape and word cap as `/audit-github-repo` (under ~500 words): header (repo / visibility / plan), settings table, security toggles, ruleset summary, legacy branch protection, files, workflow jobs vs. required contexts, and a result line per category using:
 
 - ✅ — now configured per baseline
 - ⏭️ — skipped due to plan limits (with the reason)
 - ❌ — failed for another reason (include the error message)
+
+If overlapping default-branch rulesets were detected in step 5, surface that here as well.
 
 End with: "Re-run `/audit-github-repo <owner/name>` anytime to verify."
 
