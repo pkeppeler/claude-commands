@@ -6,7 +6,7 @@ Apply a first-class GitHub configuration to a repository. **Idempotent — safe 
 
 **Target repo**: `$ARGUMENTS` in `owner/name` form. If empty, derive from the current directory using `gh repo view --json nameWithOwner --jq .nameWithOwner`. **Confirm the target with the user before any mutation.**
 
-**Owner login** for CODEOWNERS: `gh api user --jq .login`.
+**Authenticated user login** (used to gate CODEOWNERS auto-creation): `gh api user --jq .login`.
 
 Use `gh api` throughout. Reads in parallel; writes sequential so failures are easy to attribute.
 
@@ -89,10 +89,14 @@ Catch errors from features unavailable on the current plan (typically 422 or 403
 
 Check existence with `gh api repos/<o>/<n>/contents/<path>`. To create, use `gh api -X PUT repos/<o>/<n>/contents/<path>` with a base64-encoded `content` field and a `message`. **Never overwrite existing content.**
 
-**`.github/CODEOWNERS`**:
-```
-* @<owner-login>
-```
+**`.github/CODEOWNERS`** — only auto-create when the repo is owned by the authenticated user. The bootstrap can't infer the right value in any other case, and writing the wrong owner is worse than writing nothing (silently makes the bootstrapper a CODEOWNER of someone else's repo, or — for orgs — produces a `* @user` entry that GitHub may silently ignore if the user lacks write access, leaving `require_code_owner_review` as a no-op):
+
+- `owner.type == "User"` **and** `owner.login == <authenticated user>` (from step 1's metadata) → write:
+  ```
+  * @<owner.login>
+  ```
+- `owner.type == "User"` **and** mismatch → skip. Print: "Repo owned by `<owner.login>`, but you're authenticated as `<you>`. Skipping CODEOWNERS — create it manually with the right user."
+- `owner.type == "Organization"` → skip. Print: "Org repo. CODEOWNERS should reference a team handle like `@<org>/<team>`, not a person. Skipping; create it manually."
 
 **`SECURITY.md`** (public repos only — skip for private):
 ```markdown

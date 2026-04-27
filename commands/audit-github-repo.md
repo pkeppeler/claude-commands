@@ -75,7 +75,7 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 - Bypass actor: `RepositoryRole` admin (id 5) with **`bypass_mode: "pull_request"`** (admin can self-merge a PR without review, but **must still open a PR** — `"always"` is a gap because it permits direct pushes to main)
 
 **Files**
-- `.github/CODEOWNERS` exists with at least `* @<owner-login>`
+- `.github/CODEOWNERS` exists with at least one `*` rule pointing at a user or team. (The bootstrap auto-creates `* @<owner.login>` only for repos owned by the authenticated user; org repos and cross-account admins are expected to populate this manually with the right team handle, so the audit doesn't pin a specific owner string.)
 - `.github/dependabot.yml` exists (at minimum: `github-actions` ecosystem)
 - `SECURITY.md` exists for public repos
 
