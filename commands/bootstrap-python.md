@@ -159,7 +159,7 @@ Common commands:
 ## Type Safety
 
 - **Pyright strict mode** (`typeCheckingMode = "strict"`). Zero errors required.
-- **Pydantic at I/O boundaries** — tool params/returns, config, external API responses, anything crossing a process or network boundary. Internal helpers can use `TypedDict`, dataclass, or plain dict where it fits.
+- **Pydantic for all structured data** — tool params/returns, config, external API responses, and internal helpers alike. No `dataclass`, no `dict[str, Any]` floating around as a stand-in for a real type. Consistency beats the marginal ergonomic win of dataclasses, and Pydantic v2's Rust core makes the runtime cost negligible. `TypedDict` is allowed only when a dict shape is genuinely required at a boundary (e.g. `**kwargs` forwarding, third-party APIs that demand a dict) — otherwise use a model and `model_dump()`.
 - **`py.typed` marker** ships with the package so consumers honor types.
 - **`__all__` on modules with a public API.** Declares what's exported and stops `json`/`httplib2`/etc. from showing up as auto-import candidates. Internal-only modules and tests don't need it.
 - `# type: ignore[<specific-rule>]` only at third-party boundaries with missing stubs. Never blanket-ignore.
