@@ -56,6 +56,8 @@ done
 | Command | What it does |
 |---|---|
 | `/bootstrap-python` | Scaffold a fresh Python repo with first-class conventions: uv, ruff, pyright strict, pytest with coverage, GitHub Actions CI (SHA-pinned), Dependabot. Pass the package name as an argument: `/bootstrap-python my_package`. |
+| `/bootstrap-github-repo` | Apply first-class GitHub repo configuration via API: squash-only merging, auto-merge + update-branch, security toggles (vulnerability alerts, Dependabot security updates, secret scanning, push protection, Private Vulnerability Reporting), a default-branch ruleset (require PR + CODEOWNERS review, required status checks, block force pushes/deletions, linear history) with the repo owner as bypass actor, and baseline files (`CODEOWNERS`, `SECURITY.md`, `dependabot.yml`). Plan-aware (skips features unavailable on private + free). Idempotent. |
+| `/audit-github-repo` | Read-only inventory of a GitHub repo's settings, security features, rulesets, branch protection, and convention files, with a gaps summary against the first-class baseline. Pairs with `/bootstrap-github-repo` — run audit, then bootstrap, then audit again. |
 
 ## Authoring a new command
 
