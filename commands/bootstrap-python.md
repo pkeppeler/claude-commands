@@ -43,6 +43,8 @@ NOTE: Python 3.14 is current as of 2026 — bump to whatever is the latest stabl
 - `[tool.pytest.ini_options]`:
   - `addopts = "--cov=<package> --cov-report=term-missing"`
   - `testpaths = ["tests"]`
+  - `xfail_strict = true` — a passing `xfail` is treated as a failure instead of a silent xpass; keeps stale xfail markers from accumulating
+  - `filterwarnings = ["error"]` — turns warnings into test failures so deprecation/library warnings are addressed when they appear, not after they pile up
 - `[tool.coverage.run]`:
   - `branch = true`
   - `source = ["src/<package>"]`
