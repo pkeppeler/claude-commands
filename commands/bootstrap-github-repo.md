@@ -1,5 +1,5 @@
 ---
-description: Apply first-class GitHub repo settings, security features, ruleset, CODEOWNERS, SECURITY.md, and dependabot.yml (idempotent, plan-aware)
+description: Apply first-class GitHub repo settings, security features, ruleset, CODEOWNERS, SECURITY.md, dependabot.yml, and a zizmor workflow security audit (idempotent, plan-aware)
 ---
 
 Apply a first-class GitHub configuration to a repository. **Idempotent — safe to re-run.** Re-run after adding, renaming, or removing workflow jobs so the default-branch ruleset's required status checks stay in sync.
@@ -115,9 +115,50 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 ```
 
-Tell the user explicitly: language-specific ecosystems (`pip`, `npm`, etc.) should be added to this file separately, or via `/bootstrap-python` and friends.
+The `cooldown` block delays Dependabot from opening PRs for new versions until 7 days post-release — defense against supply-chain attacks (typosquatting, malicious-then-yanked packages). zizmor's `dependabot-cooldown` audit flags ecosystems without this; failing to include it will fail the zizmor CI check.
+
+Tell the user explicitly: language-specific ecosystems (`uv` for Python, `npm`, etc.) should be added to this file separately, or via `/bootstrap-python` and friends. Each added ecosystem should also include a `cooldown` block.
+
+**`.github/workflows/zizmor.yml`** (only if missing — GitHub Actions security audit, language-agnostic):
+
+This workflow runs [zizmor](https://docs.zizmor.sh) on every push to `main` and every PR. zizmor enforces the SHA-pinning convention and catches other workflow-security issues (excessive permissions, credential persistence, untrusted-input usage, etc.). Owning this workflow at the github-bootstrap level (rather than mixing it into language-specific CI) means non-Python repos still get the security audit.
+
+Latest zizmor is installed each run — **do not pin** the version (a security tool with stale audits defeats the purpose).
+
+```yaml
+name: zizmor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<sha> # vX.Y.Z
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@<sha> # vX.Y.Z
+        with:
+          enable-cache: true
+      - run: uv tool install zizmor
+      - run: zizmor .
+```
+
+**Look up the current SHAs for `actions/checkout` and `astral-sh/setup-uv` before writing — do not invent SHAs.** Use the same SHA-pinning format (`@<40-char-sha> # vX.Y.Z`) the bootstrap enforces elsewhere.
+
+If `zizmor .` flags pre-existing findings in OTHER workflows on first run, those need fixing in the workflows themselves (the bootstrap doesn't auto-fix them — that's the user's call). The most common findings on legacy workflows: missing `permissions:` blocks (severity: medium) and `persist-credentials: false` on checkout (severity: medium). Surface the finding counts in the final report so the user knows what to expect.
+
+Once `zizmor.yml` exists, step 1's workflow discovery will pick up its `zizmor` job key, and step 5's ruleset will include it as a required status check automatically.
 
 **If the contents PUT fails with 409/422**: a default-branch ruleset is already enforcing against direct commits (admin bypass mode `pull_request` blocks the API write). Record as "skipped: ruleset blocks direct commit — create `<path>` via PR" and continue. This typically only happens on a re-run where the ruleset already exists but a baseline file is missing; on the normal first-run path, Step 4 finishes before Step 5 creates the ruleset.
 
@@ -212,5 +253,5 @@ End with: "Re-run `/audit-github-repo <owner/name>` anytime to verify."
 
 - Confirm the target repo with the user before the first mutation.
 - Catch and surface plan-related errors as "skipped: requires X" — don't fail the whole command.
-- Never overwrite an existing `dependabot.yml`, `SECURITY.md`, or `CODEOWNERS`. Only create if missing.
+- Never overwrite an existing `dependabot.yml`, `SECURITY.md`, `CODEOWNERS`, or `.github/workflows/zizmor.yml`. Only create if missing.
 - The command should be safe to run multiple times. Re-runs converge state to the baseline.
