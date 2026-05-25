@@ -115,9 +115,13 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 ```
 
-Tell the user explicitly: language-specific ecosystems (`pip`, `npm`, etc.) should be added to this file separately, or via `/bootstrap-python` and friends.
+The `cooldown` block delays Dependabot from opening PRs for new versions until 7 days post-release — defense against supply-chain attacks (typosquatting, malicious-then-yanked packages). zizmor's `dependabot-cooldown` audit flags ecosystems without this; failing to include it will fail the zizmor CI check.
+
+Tell the user explicitly: language-specific ecosystems (`uv` for Python, `npm`, etc.) should be added to this file separately, or via `/bootstrap-python` and friends. Each added ecosystem should also include a `cooldown` block.
 
 **`.github/workflows/zizmor.yml`** (only if missing — GitHub Actions security audit, language-agnostic):
 

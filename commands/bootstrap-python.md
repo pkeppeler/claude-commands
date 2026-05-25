@@ -347,7 +347,13 @@ Three jobs (`lint`, `typecheck`, `test`) running in parallel on `pull_request` a
 
 If absent, create with the baseline below.
 
-If present, **patch**: ensure both `pip` and `github-actions` ecosystem entries exist with `interval: "weekly"`. If `pip` exists without grouping, add the minor/patch group. Don't remove or modify any other ecosystem entries the user has configured.
+If present, **patch**:
+
+- Ensure both `uv` and `github-actions` ecosystem entries exist with `interval: "weekly"`.
+- If a legacy `package-ecosystem: "pip"` entry exists for a uv project, **rewrite it to `"uv"`**. The `uv` ecosystem (added to Dependabot in 2025) updates `uv.lock` atomically alongside `pyproject.toml`; the `pip` ecosystem only touches `pyproject.toml` and leaves `uv.lock` stale.
+- If the `uv` (or formerly-`pip`) entry exists without grouping, add the minor/patch group.
+- Ensure every ecosystem has a `cooldown` block (defense against supply-chain attacks; zizmor's `dependabot-cooldown` audit fails CI without it).
+- Don't remove or modify any other ecosystem entries the user has configured.
 
 ```yaml
 version: 2
@@ -356,14 +362,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "pip"   # reads pyproject.toml; works for uv projects
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "uv"   # updates pyproject.toml AND uv.lock atomically
     directory: "/"
     schedule:
       interval: "weekly"
     groups:
       python-minor-patch:
         update-types: ["minor", "patch"]
+    cooldown:
+      default-days: 7
 ```
+
+The `cooldown: default-days: 7` block delays new-version PRs by 7 days post-release — gives the ecosystem time to catch malicious or yanked versions before Dependabot proposes them. zizmor's `dependabot-cooldown` audit (medium severity) flags ecosystems without it, so omitting cooldown will fail the workflow security audit.
 
 ## Step 11 — `CLAUDE.md`
 

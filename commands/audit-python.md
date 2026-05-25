@@ -114,9 +114,10 @@ For each `.yml` file:
 ### 9. `.github/dependabot.yml`
 
 - Exists?
-- Has a `pip` ecosystem entry (Dependabot reads `pyproject.toml` for uv projects via the `pip` ecosystem)?
+- Has a `uv` ecosystem entry (updates `pyproject.toml` and `uv.lock` atomically)? Flag a legacy `pip` entry as a gap — the `uv` ecosystem is the right one for uv-managed projects.
 - Has a `github-actions` ecosystem entry?
 - Minor/patch grouping configured for the Python ecosystem?
+- Every ecosystem has a `cooldown` block (e.g. `cooldown: { default-days: 7 }`)? zizmor's `dependabot-cooldown` audit fails CI without it; missing cooldown is a gap.
 
 ### 10. `CLAUDE.md`
 

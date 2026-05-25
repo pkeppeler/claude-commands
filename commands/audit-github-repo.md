@@ -76,7 +76,7 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 
 **Files**
 - `.github/CODEOWNERS` exists with at least one `*` rule pointing at a user or team. (The bootstrap auto-creates `* @<owner.login>` only for repos owned by the authenticated user; org repos and cross-account admins are expected to populate this manually with the right team handle, so the audit doesn't pin a specific owner string.)
-- `.github/dependabot.yml` exists (at minimum: `github-actions` ecosystem)
+- `.github/dependabot.yml` exists (at minimum: `github-actions` ecosystem with a `cooldown` block — defense against supply-chain attacks; zizmor's `dependabot-cooldown` audit fails CI without it). Flag any ecosystem missing the cooldown block.
 - `SECURITY.md` exists for public repos
 - `.github/workflows/zizmor.yml` exists (GitHub Actions security audit — flags unpinned actions, excessive permissions, etc.)
 
