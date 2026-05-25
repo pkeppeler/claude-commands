@@ -43,7 +43,7 @@ If either check fails, **do not proceed**. Print the remediation and exit.
 - 403 → "not available"
 
 ### 6. Convention files — `gh api repos/<o>/<n>/contents/<path>`
-Check presence (not content) of: `.github/CODEOWNERS`, `.github/dependabot.yml`, `SECURITY.md`, `.github/workflows/`
+Check presence (not content) of: `.github/CODEOWNERS`, `.github/dependabot.yml`, `SECURITY.md`, `.github/workflows/`, `.github/workflows/zizmor.yml`
 
 ### 7. Workflow job names — read `.github/workflows/*.yml` via `gh api`
 For each workflow, list job keys and `name:` values. These are the candidate contexts for required status checks in a ruleset.
@@ -78,6 +78,7 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 - `.github/CODEOWNERS` exists with at least one `*` rule pointing at a user or team. (The bootstrap auto-creates `* @<owner.login>` only for repos owned by the authenticated user; org repos and cross-account admins are expected to populate this manually with the right team handle, so the audit doesn't pin a specific owner string.)
 - `.github/dependabot.yml` exists (at minimum: `github-actions` ecosystem)
 - `SECURITY.md` exists for public repos
+- `.github/workflows/zizmor.yml` exists (GitHub Actions security audit — flags unpinned actions, excessive permissions, etc.)
 
 **Legacy branch protection on default branch**
 - Should be absent — the new ruleset replaces it. Presence (especially a no-op one) is a gap.
