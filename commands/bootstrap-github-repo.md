@@ -32,6 +32,7 @@ Fetch:
 - `gh api repos/<o>/<n>/vulnerability-alerts`
 - `gh api repos/<o>/<n>/private-vulnerability-reporting`
 - `gh api repos/<o>/<n>/rulesets` — also serves as a secondary plan probe (see below)
+- `gh api orgs/<owner.login>/rulesets` — only when `owner.type == "Organization"`. Needs `admin:org`. A 404 whose body mentions `"needs the \"admin:org\" scope"` means the scope is missing — record this and mark org-level rulesets as **unverifiable**, do NOT treat it as "no org rulesets exist." This matters because Step 5's overlapping-ruleset check would otherwise miss org-scoped rulesets targeting the default branch, and the bootstrap would silently stack a second ruleset on top.
 - `gh api repos/<o>/<n>/branches/<default>/protection`
 - `gh api repos/<o>/<n>/contents/.github/workflows` — 404 if absent. If present, iterate and fetch each file via `gh api repos/<o>/<n>/contents/.github/workflows/<name>`, base64-decode the `content` field, and parse for job keys and `name:` values.
 
@@ -179,7 +180,8 @@ Use the workflow job names already discovered in step 1. A job's reported contex
 
 **Conditional rule**: include the `required_status_checks` rule **only if** at least one workflow job was discovered. If `.github/workflows/` is absent or has no jobs, omit the rule entirely — a placeholder no-op check is cargo cult, and an empty `required_status_checks` array provides no signal. The rule will be added on a subsequent re-run once a workflow exists.
 
-**Check for overlapping rulesets** before mutating: from step 1's ruleset list, fetch full details (`gh api repos/<o>/<n>/rulesets/<id>`) for any whose `conditions.ref_name.include` contains `~DEFAULT_BRANCH` or the literal default branch name. If any exist beyond `default-branch-protection`, surface them: "Found N additional ruleset(s) targeting the default branch: [name1, name2]. They will continue to enforce alongside this ruleset; consider consolidating manually." Then continue.
+**Check for overlapping rulesets** before mutating: from step 1's ruleset list, fetch full details (`gh api repos/<o>/<n>/rulesets/<id>`) for any whose `conditions.ref_name.include` contains `~DEFAULT_BRANCH` or the literal default branch name. Do the same for org-level rulesets from `orgs/<owner.login>/rulesets` (org rulesets that target this repo can be repo-name-conditioned, custom-property-conditioned, or `~ALL`). If any exist beyond `default-branch-protection`, surface them: "Found N additional ruleset(s) targeting the default branch: [name1 (repo), name2 (org)]. They will continue to enforce alongside this ruleset; consider consolidating manually." Then continue.
+**If org-level rulesets were unverifiable** (no `admin:org`), pause and tell the user: "Could not check org-level rulesets — `admin:org` scope not granted. If an org-level ruleset already targets this repo's default branch, this command will create a second one that stacks alongside it. Continue, or refresh with `gh auth refresh -s admin:org` and re-run?" Ask the user explicitly before creating the ruleset.
 
 Find any existing ruleset named `default-branch-protection`:
 - Exists → `gh api -X PUT repos/<o>/<n>/rulesets/<id>` (replace)
@@ -252,7 +254,7 @@ Re-fetch the same endpoints from step 1 and produce a final markdown report — 
 - ⏭️ — skipped due to plan limits (with the reason)
 - ❌ — failed for another reason (include the error message)
 
-If overlapping default-branch rulesets were detected in step 5, surface that here as well.
+If overlapping default-branch rulesets were detected in step 5, surface that here as well. If org-level rulesets were unverifiable, surface that too — Step 7 should never report a clean overlap check it couldn't actually run.
 
 End with: "Re-run `/audit-github-repo <owner/name>` anytime to verify."
 
