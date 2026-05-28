@@ -28,21 +28,30 @@ If any check fails, **do not proceed**. Print the remediation and exit before an
 ## Step 1 — Inventory (read, parallel)
 
 Fetch:
-- `gh api repos/<o>/<n>` — settings, visibility
+- `gh api repos/<o>/<n>` — settings, visibility, `owner.type`, `owner.login`
 - `gh api repos/<o>/<n>/vulnerability-alerts`
 - `gh api repos/<o>/<n>/private-vulnerability-reporting`
-- `gh api repos/<o>/<n>/rulesets` — also serves as the plan probe (see below)
+- `gh api repos/<o>/<n>/rulesets` — also serves as a secondary plan probe (see below)
 - `gh api repos/<o>/<n>/branches/<default>/protection`
 - `gh api repos/<o>/<n>/contents/.github/workflows` — 404 if absent. If present, iterate and fetch each file via `gh api repos/<o>/<n>/contents/.github/workflows/<name>`, base64-decode the `content` field, and parse for job keys and `name:` values.
 
-Determine plan constraints from visibility plus the rulesets-list response (used as a plan probe):
-- **Public** → all features available; no probe needed.
-- **Private + rulesets list 200** → paid plan; rulesets available. Secret scanning still depends on a GHAS license — if step 3 returns 422, skip.
-- **Private + rulesets list 403** → free plan; rulesets, branch protection rulesets, and code/secret/push-protection scanning are all unavailable.
+Then fetch the owner's plan (the `repos/<o>/<n>` response usually returns `owner.plan: null`):
+- `owner.type == "Organization"` → `gh api orgs/<owner.login> --jq .plan.name`
+- `owner.type == "User"` → `gh api users/<owner.login> --jq .plan.name` (only populated when authenticated *as* that user)
+- null / 404 → fall back to "unknown"
 
-Don't rely on `owner.plan.name` — that field is often absent on user-owned repos. The rulesets-list response is the canary.
+Determine feature availability from visibility + plan:
 
-Print a one-line plan summary so the user knows what will be skipped.
+| Plan | Rulesets on private | Vuln alerts / Dependabot updates / PVR | Secret scanning / push protection |
+|---|---|---|---|
+| `free` | ❌ | ✅ free for all | ❌ requires GHAS |
+| `pro` (user) / `team` (org) | ✅ | ✅ | ❌ requires GHAS add-on |
+| `enterprise` (or legacy `business_plus`) | ✅ | ✅ | ⚠️ only if GHAS add-on purchased — probe empirically in step 3 |
+| public visibility (any plan) | ✅ | ✅ | ✅ free |
+
+When plan is "unknown", use rulesets-list 200 vs 403 as the canary (200 ≥ Team/Pro, 403 = Free on private). Probe GHAS features empirically (422 → skip).
+
+Print a one-line plan summary like *"private Team — rulesets available; GHAS-gated features will be skipped unless add-on is detected"* so the user knows what's coming before any mutation.
 
 ---
 
@@ -222,7 +231,7 @@ Ruleset payload (omit the `required_status_checks` rule object when no workflow 
 
 `actor_id: 5` is the admin repository role. Bypass mode `pull_request` means admins can self-merge a PR without requiring an approving review, **but still must open a PR** — direct pushes to the default branch are rejected for everyone, including admins. This is the right shape for "always use PRs; the owner doesn't need a reviewer."
 
-If the API returns 403 with an "Upgrade" message, this is private + free — record as "skipped: rulesets require GitHub Pro" and continue.
+If the API returns 403 with an "Upgrade" message, this is private + Free — record as "skipped: rulesets on private repos require GitHub Pro (user) or Team (org)" and continue.
 
 ---
 

@@ -22,9 +22,28 @@ If either check fails, **do not proceed**. Print the remediation and exit.
 ## What to inventory
 
 ### 1. Repo metadata — `gh api repos/<o>/<n>`
-- `visibility`, `default_branch`, `owner.type`, `owner.plan.name` (free vs paid)
+- `visibility`, `default_branch`, `owner.type`, `owner.login`
 - Merge settings: `allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge`, `delete_branch_on_merge`, `allow_auto_merge`, `allow_update_branch`, `squash_merge_commit_title`, `squash_merge_commit_message`
 - `security_and_analysis.{secret_scanning, secret_scanning_push_protection, dependabot_security_updates}.status` (may be absent on private/free)
+
+`owner.plan.name` at this endpoint is often `null` for org-owned repos. Fetch the plan separately in step 1b.
+
+### 1b. Owner plan — fetch separately
+
+- `owner.type == "Organization"` → `gh api orgs/<owner.login> --jq .plan.name`
+- `owner.type == "User"` → `gh api users/<owner.login> --jq .plan.name` (only populated when authenticated *as* that user)
+- 404 / null → fall back to "unknown"; treat rulesets-list 200 vs 403 as a secondary probe (200 implies at least Team / Pro)
+
+Map plan → feature availability:
+
+| Plan | Rulesets on private | Vuln alerts / Dependabot updates / PVR | Secret scanning / push protection / code scanning |
+|---|---|---|---|
+| `free` | ❌ | ✅ free for all | ❌ private requires GHAS |
+| `pro` (user) / `team` (org) | ✅ | ✅ | ❌ requires GHAS add-on |
+| `enterprise` (or legacy `business_plus`) | ✅ | ✅ | ⚠️ only if GHAS add-on purchased — probe `security_and_analysis` |
+| public visibility (any plan) | ✅ | ✅ | ✅ free |
+
+Use this to classify each baseline item as `❌` (available but missing) vs `⏭️` (genuinely gated).
 
 ### 2. Vulnerability alerts — `gh api repos/<o>/<n>/vulnerability-alerts`
 - 204 → enabled; 404 → disabled
@@ -58,12 +77,12 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 - `allow_auto_merge: true`, `allow_update_branch: true`
 - `squash_merge_commit_title: PR_TITLE`, `squash_merge_commit_message: BLANK`
 
-**Security**
-- Vulnerability alerts: enabled
-- Dependabot security updates: enabled
-- Secret scanning: enabled (public free; private requires GHAS)
-- Push protection: enabled (public free; private requires GHAS)
-- Private Vulnerability Reporting: enabled
+**Security** (classify against the plan map in step 1b — `❌` only when available on this plan)
+- Vulnerability alerts: enabled — free for all plans
+- Dependabot security updates: enabled — free for all plans
+- Private Vulnerability Reporting: enabled — free for all plans
+- Secret scanning: enabled — free on public; private requires GHAS (Enterprise + add-on, or Team + add-on)
+- Push protection: enabled — same gating as secret scanning
 
 **Default-branch ruleset** (named `default-branch-protection`)
 - Enforcement: `active`
@@ -87,7 +106,7 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 
 A single markdown report under ~500 words:
 
-1. **Header** — repo, visibility, plan, default branch, and one-line plan summary (e.g. "private + free → no rulesets / no GHAS scanning")
+1. **Header** — repo, visibility, owner plan (from step 1b), default branch, and a one-line capability summary derived from the plan map (e.g. "private Team → rulesets available; GHAS-gated features require add-on", "private Free → no rulesets, no private GHAS", "public Pro → all features available")
 2. **Settings table** — current value vs. baseline, with ✅/❌/⏭️ (skipped/unavailable) for each baseline setting above
 3. **Rulesets** — list with summaries; for the default-branch ruleset, mark each baseline criterion ✅/❌, including the bypass mode
 4. **Legacy branch protection** — present (and what it enforces) or "not set"
