@@ -19,6 +19,22 @@ Verify `gh` is installed and authenticated **before** any other work.
 
 If either check fails, **do not proceed**. Print the remediation and exit.
 
+## Step 0b — Token capability detection
+
+Several endpoints below are admin-gated and 404 to non-admin tokens *without* indicating "you can't see this" — the 404 is indistinguishable from "the thing isn't set." Capture token capability **before** interpreting any 404, so unverifiable items don't get reported as gaps.
+
+- **Repo admin**: read `permissions.admin` from the step 1 metadata response (true/false).
+- **`admin:org` scope**: parse the `gh auth status` token-scopes line OR probe `gh api orgs/<owner.login>/rulesets` — a 404 whose body mentions `"needs the \"admin:org\" scope"` means the scope is missing.
+
+Carry these two bits forward and use them to classify each admin-gated 404 as either "genuinely disabled/not set" or "unverifiable with this token." The following endpoints **require repo admin** — their 404s are ambiguous without it:
+
+- `GET /repos/.../vulnerability-alerts`
+- `GET /repos/.../private-vulnerability-reporting`
+- `GET /repos/.../branches/.../protection`
+- The `security_and_analysis` block on `GET /repos/...` is omitted entirely for non-admins (do not treat absence as "disabled")
+
+The repo-scoped rulesets endpoint (`GET /repos/.../rulesets`) is readable by any `repo`-scoped token, so its results are trustworthy. The org-scoped endpoint (`GET /orgs/.../rulesets`) needs `admin:org`.
+
 ## What to inventory
 
 ### 1. Repo metadata — `gh api repos/<o>/<n>`
@@ -46,19 +62,30 @@ Map plan → feature availability:
 Use this to classify each baseline item as `❌` (available but missing) vs `⏭️` (genuinely gated).
 
 ### 2. Vulnerability alerts — `gh api repos/<o>/<n>/vulnerability-alerts`
-- 204 → enabled; 404 → disabled
+- 204 → enabled
+- 404 + repo admin → disabled
+- 404 + non-admin → **unverifiable** (admin-only endpoint)
 
 ### 3. Private Vulnerability Reporting — `gh api repos/<o>/<n>/private-vulnerability-reporting`
-- Returns `{"enabled": true/false}` or 404 if unavailable on this plan
+- Returns `{"enabled": true/false}` → use directly
+- 404 + repo admin → unavailable on this plan
+- 404 + non-admin → **unverifiable** (admin-only endpoint)
 
-### 4. Rulesets — `gh api repos/<o>/<n>/rulesets`
+### 4. Rulesets
+
+**Repo-scoped** — `gh api repos/<o>/<n>/rulesets` (any `repo` token):
 - For each ruleset: name, target, enforcement, rules summary, bypass actors
 - 403 → "not available on current plan" (private + free)
 - Identify all rulesets whose `conditions.ref_name.include` contains `~DEFAULT_BRANCH` or the literal default branch name. Fetch full rule details with `gh api repos/<o>/<n>/rulesets/<id>` for each so individual rule parameters and bypass-actor modes are visible. More than one such ruleset is itself a gap (overlapping enforcement obscures effective policy).
 
+**Org-scoped** — `gh api orgs/<owner.login>/rulesets` (only if `owner.type == "Organization"`):
+- Needs `admin:org` scope. If the call 404s with a "needs the \"admin:org\" scope" body, mark org-scoped rulesets as **unverifiable** — do **not** assert "no enforcement" based solely on the empty repo-scoped list, since an org-scoped ruleset can target this repo invisibly.
+- If accessible: list org rulesets whose `conditions` target this repo (by name, custom property, or `~ALL`) and whose `ref_name` conditions cover the default branch. Apply the same per-ruleset detail fetch as the repo-scoped case.
+
 ### 5. Legacy branch protection — `gh api repos/<o>/<n>/branches/<default_branch>/protection`
 - 200 → list active protections
-- 404 → "not set"
+- 404 + repo admin → "not set"
+- 404 + non-admin → **unverifiable** (admin-only endpoint)
 - 403 → "not available"
 
 ### 6. Convention files — `gh api repos/<o>/<n>/contents/<path>`
@@ -106,16 +133,20 @@ Compare findings against this baseline (mirrors what `/bootstrap-github-repo` ap
 
 A single markdown report under ~500 words:
 
-1. **Header** — repo, visibility, owner plan (from step 1b), default branch, and a one-line capability summary derived from the plan map (e.g. "private Team → rulesets available; GHAS-gated features require add-on", "private Free → no rulesets, no private GHAS", "public Pro → all features available")
-2. **Settings table** — current value vs. baseline, with ✅/❌/⏭️ (skipped/unavailable) for each baseline setting above
-3. **Rulesets** — list with summaries; for the default-branch ruleset, mark each baseline criterion ✅/❌, including the bypass mode
-4. **Legacy branch protection** — present (and what it enforces) or "not set"
-5. **Files** — which baseline files are present / missing
+1. **Header** — repo, visibility, owner plan (from step 1b), default branch, and a one-line capability summary derived from the plan map (e.g. "private Team → rulesets available; GHAS-gated features require add-on", "private Free → no rulesets, no private GHAS", "public Pro → all features available").
+   Add a **token capability line** immediately below: repo admin (yes/no) and `admin:org` scope (yes/no). When either is "no," follow with a one-line caveat listing what is therefore unverifiable (security toggles, legacy branch protection, org-scoped rulesets, as applicable).
+2. **Settings table** — current value vs. baseline, with ✅/❌/⏭️ (skipped/unavailable) for each baseline setting above. Use **❓ (unverifiable)** in place of ❌ for any admin-gated item the token couldn't read.
+3. **Rulesets** — list repo-scoped rulesets with summaries; for the default-branch ruleset, mark each baseline criterion ✅/❌, including the bypass mode. If org-scoped rulesets are unverifiable, say so explicitly — don't infer "no enforcement" from the empty repo-scoped list alone.
+4. **Legacy branch protection** — present (and what it enforces), "not set" (only when token has repo admin), or "unverifiable (admin-only endpoint)".
+5. **Files** — which baseline files are present / missing.
 6. **Workflow jobs** — discovered job names. Compare against the ruleset's `required_status_checks` contexts and flag both directions:
    - Job exists in a workflow but not listed as a required context → gap (re-run bootstrap)
    - Context listed in the ruleset but no matching job in any workflow → gap (stale context, re-run bootstrap)
    - No workflows present but the rule exists → gap (rule should be removed until a workflow lands)
    - Workflows present but the rule is absent → gap (rule should be added)
-7. **Gaps** — bullet list of concrete deltas vs. baseline. Each gap should name the exact thing that's wrong (e.g. "ruleset bypass mode is `always` — should be `pull_request`", "`pull_request` rule's `allowed_merge_methods` is `[\"merge\",\"squash\",\"rebase\"]` — should be `[\"squash\"]`", "multiple rulesets target the default branch (`default-branch-protection`, `legacy-protection`) — consolidate")
+   - If the default-branch ruleset is itself unverifiable (org-scoped + no `admin:org`), skip this cross-check and say so.
+7. **Could not verify** — bullet list of items the token couldn't read, each naming the endpoint and the missing capability (e.g. "Legacy branch protection on `<default>` — admin-only endpoint, token lacks repo admin", "Org-scoped rulesets — `admin:org` scope not granted"). Include the remediation: re-run with an admin token / `gh auth refresh -s admin:org`.
+8. **Gaps** — bullet list of concrete deltas vs. baseline. Each gap should name the exact thing that's wrong (e.g. "ruleset bypass mode is `always` — should be `pull_request`", "`pull_request` rule's `allowed_merge_methods` is `[\"merge\",\"squash\",\"rebase\"]` — should be `[\"squash\"]`", "multiple rulesets target the default branch (`default-branch-protection`, `legacy-protection`) — consolidate").
+   **Never list an unverifiable item here.** If you couldn't read the endpoint, the right place is "Could not verify," not "Gaps" — the audit asserts only what it can prove.
 
 Facts and gaps only. No generic best-practice advice — the reader is the owner.
